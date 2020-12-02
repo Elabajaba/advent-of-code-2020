@@ -8,9 +8,8 @@ use std::path::Path;
 
 fn main() {
     let integers = load_file_to_vec(Path::new("input.txt")).unwrap();
-    // find_two_numbers_sort_filter(integers);
-    // part1(&integers);
-    // part2(&integers);
+    part1(&integers);
+    part2(&integers);
 }
 
 fn load_file_to_vec(path: &Path) -> Result<Vec<i32>> {
@@ -26,7 +25,12 @@ fn load_file_to_vec(path: &Path) -> Result<Vec<i32>> {
 
 fn part1(input: &[i32]) {
     let numbers = find_two_numbers_original_optimized(input).unwrap();
-    println!("{}, {}", numbers.0, numbers.1);
+    println!(
+        "{}, {}, product: {}",
+        numbers.0,
+        numbers.1,
+        numbers.0 * numbers.1
+    );
 }
 
 #[inline(always)]
@@ -96,7 +100,13 @@ fn find_two_numbers_sort_filter(mut input: Vec<i32>) -> Option<(i32, i32)> {
 
 fn part2(input: &[i32]) {
     let numbers = find_three_numbers_original_optimized(input).unwrap();
-    println!("{}, {}, {}", numbers.0, numbers.1, numbers.2);
+    println!(
+        "{}, {}, {}, product: {}",
+        numbers.0,
+        numbers.1,
+        numbers.2,
+        numbers.0 * numbers.1 * numbers.2
+    );
 }
 
 #[inline(always)]
