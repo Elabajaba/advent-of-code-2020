@@ -1,6 +1,7 @@
 #![feature(test)]
 extern crate test;
 
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Read, Result};
 use std::path::Path;
@@ -25,52 +26,75 @@ fn load_file(path: &Path) -> Result<String> {
     Ok(contents)
 }
 
-fn parse_map(input: &str) -> Vec<Vec<Obstacles>> {
-    let mut map = Vec::new();
+fn parse_map(input: &str) -> (Vec<Obstacles>, usize) {
+    let mut map: Vec<Obstacles> = Vec::new();
+    let mut width = 0;
     for line in input.lines() {
-        let mut inner: Vec<Obstacles> = Vec::with_capacity(line.len());
+        width = line.len();
         for c in line.chars() {
-            inner.push(match c {
+            map.push(match c {
                 '#' => Obstacles::Tree,
                 '.' => Obstacles::Empty,
-                _ => panic!("unexpected input. expects # or ., but received: {}", c),
+                _ => panic!("Expected either '#' or '.', received {:?}", c),
             });
         }
-        map.push(inner);
     }
-    map
+    (map, width)
 }
 
 #[inline(always)]
-fn get_trees_hit(map: &[Vec<Obstacles>], run: usize, rise: usize) -> i64 {
-    let mut trees_hit = 0;
-    let width = map[0].len();
-    let mut x = 0;
-    for line in map.iter().step_by(rise) {
-        if line[x] == Obstacles::Tree {
-            trees_hit += 1;
-        }
-        x += run;
-        if x >= width {
-            x -= width;
-        }
-    }
-    trees_hit
+fn get_trees_hit(map: &[Obstacles], run: usize, rise: usize, width: usize) -> i64 {
+    // let mut trees_hit = 0;
+    // for (i, line) in map.chunks(width).step_by(rise).enumerate() {
+    //     let x = (i * run) % width;
+    //     if line[x] == Obstacles::Tree {
+    //         trees_hit += 1;
+    //     }
+    // }
+    // trees_hit
+    map.chunks(width)
+        .step_by(rise)
+        .enumerate()
+        .fold(0_i64, |acc, (i, line)| {
+            if line[(i * run) % width] == Obstacles::Tree {
+                acc + 1
+            } else {
+                acc
+            }
+        })
+}
+
+#[inline(always)]
+fn get_trees_hit_multithreaded(map: &[Obstacles], run: usize, rise: usize, width: usize) -> i64 {
+    map.par_chunks(width)
+        .step_by(rise)
+        .enumerate()
+        .fold(
+            || 0_i64,
+            |acc, (i, line)| {
+                if line[(i * run) % width] == Obstacles::Tree {
+                    acc + 1
+                } else {
+                    acc
+                }
+            },
+        )
+        .sum::<i64>()
 }
 
 fn part1(input: &str) -> i64 {
-    let map = parse_map(&input);
+    let (map, width) = parse_map(&input);
 
-    get_trees_hit(&map, 3, 1)
+    get_trees_hit_multithreaded(&map, 3, 1, width)
 }
 
 fn part2(input: &str) -> i64 {
-    let map = parse_map(&input);
-    get_trees_hit(&map, 1, 1)
-        * get_trees_hit(&map, 3, 1)
-        * get_trees_hit(&map, 5, 1)
-        * get_trees_hit(&map, 7, 1)
-        * get_trees_hit(&map, 1, 2)
+    let (map, width) = parse_map(&input);
+    get_trees_hit_multithreaded(&map, 1, 1, width)
+        * get_trees_hit_multithreaded(&map, 3, 1, width)
+        * get_trees_hit_multithreaded(&map, 5, 1, width)
+        * get_trees_hit_multithreaded(&map, 7, 1, width)
+        * get_trees_hit_multithreaded(&map, 1, 2, width)
 }
 
 #[cfg(test)]
@@ -81,19 +105,22 @@ mod tests {
     #[test]
     fn test_parse_map() {
         let input = "..#\n##.".to_string();
-        let map = parse_map(&input);
+        let (map, _width) = parse_map(&input);
         assert_eq!(
-            map[0],
-            vec![Obstacles::Empty, Obstacles::Empty, Obstacles::Tree]
-        );
-        assert_eq!(
-            map[1],
-            vec![Obstacles::Tree, Obstacles::Tree, Obstacles::Empty]
+            map,
+            vec![
+                Obstacles::Empty,
+                Obstacles::Empty,
+                Obstacles::Tree,
+                Obstacles::Tree,
+                Obstacles::Tree,
+                Obstacles::Empty
+            ]
         );
     }
 
     #[test]
-    fn test_get_trees_hit() {
+    fn test_get_trees_hit_multithreaded() {
         // \n\ at end of line for nicer indentation
         let input = "..##.......\n\
             #...#...#..\n\
@@ -106,17 +133,17 @@ mod tests {
             #.##...#...\n\
             #...##....#\n\
             .#..#...#.#";
-        let map = parse_map(input);
+        let (map, width) = parse_map(&input);
 
-        let trees_hit = get_trees_hit(&map, 1, 1);
+        let trees_hit = get_trees_hit_multithreaded(&map, 1, 1, width);
         assert_eq!(trees_hit, 2);
-        let trees_hit = get_trees_hit(&map, 3, 1);
+        let trees_hit = get_trees_hit_multithreaded(&map, 3, 1, width);
         assert_eq!(trees_hit, 7);
-        let trees_hit = get_trees_hit(&map, 5, 1);
+        let trees_hit = get_trees_hit_multithreaded(&map, 5, 1, width);
         assert_eq!(trees_hit, 3);
-        let trees_hit = get_trees_hit(&map, 7, 1);
+        let trees_hit = get_trees_hit_multithreaded(&map, 7, 1, width);
         assert_eq!(trees_hit, 4);
-        let trees_hit = get_trees_hit(&map, 1, 2);
+        let trees_hit = get_trees_hit_multithreaded(&map, 1, 2, width);
         assert_eq!(trees_hit, 2);
     }
 
@@ -150,7 +177,15 @@ mod tests {
     fn bench_get_trees_hit(b: &mut Bencher) {
         // \n\ at end of line for nicer indentation
         let input = load_file(Path::new("input.txt")).unwrap();
-        let map = parse_map(&input);
-        b.iter(|| get_trees_hit(&map, 3, 1))
+        let (map, width) = parse_map(&input);
+        b.iter(|| get_trees_hit(&map, 3, 1, width))
+    }
+
+    #[bench]
+    fn bench_get_trees_hit_multithreaded(b: &mut Bencher) {
+        // \n\ at end of line for nicer indentation
+        let input = load_file(Path::new("input.txt")).unwrap();
+        let (map, width) = parse_map(&input);
+        b.iter(|| get_trees_hit_multithreaded(&map, 3, 1, width))
     }
 }
